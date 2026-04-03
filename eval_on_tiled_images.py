@@ -137,13 +137,43 @@ def plot_results(stitched_preds, filtered_boxes, filtered_conf, og_image,
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--use-tiling', default=True)
-    parser.add_argument('--perform-iou-sweep', default=False)
-    parser.add_argument('--plot', default=False)
-    parser.add_argument('--image-set', default='test')
-    parser.add_argument('--dataset-yaml-path', default='ultralytics/cfg/datasets/CARPK_tiling.yaml')
-
+    parser = argparse.ArgumentParser(
+        description='Evaluate a TinyissimoYOLO model on (optionally tiled) test images.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        '--model', required=True,
+        help='Path to the trained model checkpoint (.pt)',
+    )
+    parser.add_argument(
+        '--use-tiling', action=argparse.BooleanOptionalAction, default=True,
+        help='Run inference on tiled images and stitch predictions',
+    )
+    parser.add_argument(
+        '--tiling-config', default='tiling_config.yaml',
+        help='Path to the tiling configuration YAML (used when --use-tiling is set)',
+    )
+    parser.add_argument(
+        '--perform-iou-sweep', action=argparse.BooleanOptionalAction, default=False,
+        help='Sweep IoU thresholds from 0.50 to 0.95',
+    )
+    parser.add_argument(
+        '--plot', action=argparse.BooleanOptionalAction, default=False,
+        help='Visualise predictions (requires a display)',
+    )
+    parser.add_argument('--image-set', default='test', choices=['train', 'val', 'test'])
+    parser.add_argument(
+        '--dataset-yaml-path', default='ultralytics/cfg/datasets/CARPK_tiling.yaml',
+        help='Path to the dataset YAML file',
+    )
+    parser.add_argument(
+        '--conf-thresh', type=float, default=0.6,
+        help='Confidence threshold for filtering predictions',
+    )
+    parser.add_argument(
+        '--iou-thresh', type=float, default=0.5,
+        help='IoU threshold for matching predictions to ground truth (ignored during sweep)',
+    )
 
     args, unknown = parser.parse_known_args()
 
@@ -151,10 +181,9 @@ if __name__ == "__main__":
     iou_sweep = args.perform_iou_sweep
     use_tiling = args.use_tiling
     dataset_yaml_path = args.dataset_yaml_path
-    
-    
+
     if use_tiling:
-        tiler = Tiler('tiling_config.yaml')
+        tiler = Tiler(args.tiling_config)
         tiler.get_split_dataset()
         dataset_yaml = yaml.safe_load(open(dataset_yaml_path))
         data_dir = dataset_yaml['path'] + '/'
@@ -169,7 +198,7 @@ if __name__ == "__main__":
     original_image_dir = data_dir + dataset_yaml['original_images'][image_set]
     original_labels_dir = data_dir + dataset_yaml['original_images'][image_set].replace('images', 'annotations')
 
-    model = YOLO('path/to/your/model.pt')
+    model = YOLO(args.model)
     
 
     full_count_mae = []
@@ -206,6 +235,7 @@ if __name__ == "__main__":
             for iou_thresh in iou_thresh_vals:
                 count_mae, pr, re, f1 = compute_metrics(instances_float, filtered_boxes,
                                                         filtered_conf, og_image,
+                                                        conf_thresh=args.conf_thresh,
                                                         iou_thresh=iou_thresh,
                                                         plot=args.plot)
                 full_count_mae.append(count_mae)
@@ -214,7 +244,10 @@ if __name__ == "__main__":
                 full_f1.append(f1)
         else:
             count_mae, pr, re, f1 = compute_metrics(instances_float, filtered_boxes,
-                                                    filtered_conf, og_image, plot=args.plot)
+                                                    filtered_conf, og_image,
+                                                    conf_thresh=args.conf_thresh,
+                                                    iou_thresh=args.iou_thresh,
+                                                    plot=args.plot)
             full_count_mae.append(count_mae)
             full_precision.append(pr)
             full_recall.append(re)
